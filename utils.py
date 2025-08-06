@@ -208,6 +208,74 @@ def run_customer_doc_chain(param):
     return ai_msg["answer"]
 
 
+def search_employee_info(param):
+    """
+    従業員情報検索に特化したTool設定用の関数
+
+    Args:
+        param: ユーザー入力値（検索したい従業員の専門分野や業務内容など）
+    
+    Returns:
+        検索結果の従業員情報
+    """
+    import pandas as pd
+    
+    try:
+        # 従業員情報CSVファイルを読み込み
+        df = pd.read_csv(ct.EMPLOYEE_FILE_PATH, encoding=ct.CSV_ENCODING)
+        
+        # 問い合わせ履歴CSVファイルも読み込み
+        history_df = pd.read_csv(ct.INQUIRY_HISTORY_FILE_PATH, encoding=ct.CSV_ENCODING)
+        
+        # 検索パラメータを小文字に変換して検索しやすくする
+        search_param = param.lower()
+        
+        # 従業員情報から関連する従業員を検索
+        # 主要業務、対応可能カテゴリ、スキルなどで検索
+        relevant_employees = []
+        
+        for index, row in df.iterrows():
+            # 各カラムの値を文字列として結合し、検索対象とする
+            employee_info = ""
+            for col in df.columns:
+                if pd.notna(row[col]):
+                    employee_info += str(row[col]).lower() + " "
+            
+            # 検索パラメータが従業員情報に含まれているかチェック
+            if any(keyword in employee_info for keyword in search_param.split()):
+                # 該当従業員の過去の対応履歴も取得
+                employee_id = row.get('従業員ID', '')
+                past_inquiries = history_df[history_df['担当者ID'] == employee_id]
+                
+                employee_data = {
+                    'employee_info': row.to_dict(),
+                    'past_inquiries_count': len(past_inquiries),
+                    'recent_categories': past_inquiries['カテゴリ'].value_counts().head(3).to_dict() if len(past_inquiries) > 0 else {}
+                }
+                relevant_employees.append(employee_data)
+        
+        if not relevant_employees:
+            return "指定された条件に該当する従業員が見つかりませんでした。"
+        
+        # 結果を整形して返す
+        result = "【従業員検索結果】\n\n"
+        for i, emp in enumerate(relevant_employees[:5]):  # 最大5人まで表示
+            emp_info = emp['employee_info']
+            result += f"**{i+1}. {emp_info.get('氏名', 'N/A')}**\n"
+            result += f"- 従業員ID: {emp_info.get('従業員ID', 'N/A')}\n"
+            result += f"- 主要業務: {emp_info.get('主要業務', 'N/A')}\n"
+            result += f"- 対応可能カテゴリ: {emp_info.get('対応可能な問い合わせカテゴリ', 'N/A')}\n"
+            result += f"- 過去の対応件数: {emp['past_inquiries_count']}件\n"
+            if emp['recent_categories']:
+                result += f"- 最近の対応カテゴリ: {', '.join([f'{k}({v}件)' for k, v in emp['recent_categories'].items()])}\n"
+            result += "\n"
+        
+        return result
+        
+    except Exception as e:
+        return f"従業員情報の検索中にエラーが発生しました: {str(e)}"
+
+
 def delete_old_conversation_log(result):
     """
     古い会話履歴の削除
